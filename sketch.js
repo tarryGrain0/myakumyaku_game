@@ -9,6 +9,18 @@ let gameOver = false;
 let attackProgress = 0;
 let attackedX = 0;
 let attackedY = 0;
+let pulseTimer = 0;
+
+// Intense phase and spear animation state
+let intensePhase = false;
+let intenseTimer = 0;
+let spearProgress = 0;
+let spearActive = false;
+
+// Array to hold flying mini-myakumya missiles
+let missiles = [];
+
+let lastMissileTime = 0;
 
 function preload() {
   cursorImg = loadImage('dorobou.png');
@@ -68,6 +80,17 @@ function setup() {
 
 function draw() {
   if (gameOver) {
+    if (spearActive && spearProgress < 30) {
+      // Draw spear of light
+      push();
+      translate(width / 2, height / 2);
+      stroke(255, 255, 200, map(spearProgress, 0, 29, 255, 0));
+      strokeWeight(8);
+      line(attackedX, attackedY - 500, attackedX, attackedY + 500);
+      pop();
+      spearProgress++;
+      return;
+    }
     if (attackProgress < 60) {
       background(255);
       translate(width / 2, height / 2);
@@ -90,11 +113,37 @@ function draw() {
 
   background(255);
   translate(width / 2, height / 2);
+
+  // Reset intense/modes when not in gameOver and not all collected
+  if (!gameOver && collectedCount < 15) {
+    intensePhase = false;
+    intenseTimer = 0;
+    spearActive = false;
+    spearProgress = 0;
+  }
+
   noStroke();
+
+  // Heartbeat pulse for red balls when 10+ coins collected
+  let pulseScale = 1;
+  if (collectedCount >= 10) {
+    pulseTimer += deltaTime;
+    pulseScale = 1 + 0.1 * sin(pulseTimer / 200);
+  }
 
   for (let b of balls) {
     fill(255, 0, 0);
-    ellipse(b.x, b.y, b.w * 3, b.h * 3);
+    let wDraw = b.w * 3 * pulseScale;
+    let hDraw = b.h * 3 * pulseScale;
+    ellipse(b.x, b.y, wDraw, hDraw);
+  }
+
+  let now = millis();
+  let shootInterval = (collectedCount >= 10) ? 500 : (collectedCount >= 5) ? 1000 : 2000;
+  let shouldShoot = false;
+  if (now - lastMissileTime >= shootInterval) {
+    shouldShoot = true;
+    lastMissileTime = now;
   }
 
   for (let b of balls) {
@@ -112,6 +161,75 @@ function draw() {
 
       fill(0, 0, 255);
       ellipse(pupilX, pupilY, b.w * 0.2 * 3);
+
+      // Shoot red missile from blue pupil toward cursor
+      let dx2 = (mouseX - width / 2) - pupilX;
+      let dy2 = (mouseY - height / 2) - pupilY;
+      let mag2 = sqrt(dx2 * dx2 + dy2 * dy2);
+      let vx2 = dx2 / mag2;
+      let vy2 = dy2 / mag2;
+      if (shouldShoot) {
+        missiles.push({
+          x: pupilX,
+          y: pupilY,
+          vx: vx2,
+          vy: vy2,
+          size: b.w * 0.5,
+          timestamp: millis()
+        });
+      }
+
+      // Spawn missile aimed at current mouse position
+      let dx = (mouseX - width / 2) - eyeX;
+      let dy = (mouseY - height / 2) - eyeY;
+      let mag = sqrt(dx * dx + dy * dy);
+      let vx = dx / mag;
+      let vy = dy / mag;
+    }
+  }
+
+  // Update and draw missiles
+  for (let i = missiles.length - 1; i >= 0; i--) {
+    let m = missiles[i];
+    if (millis() - m.timestamp > 10000) {
+      missiles.splice(i, 1);
+      continue;
+    }
+    // Move missile with speed multiplier based on collected coins
+    let speedMultiplier = 1;
+    if (collectedCount >= 10) {
+      speedMultiplier = 2.5;
+    } else if (collectedCount >= 5) {
+      speedMultiplier = 1.25;
+    }
+    m.x += m.vx * deltaTime * 0.2 * speedMultiplier;
+    m.y += m.vy * deltaTime * 0.2 * speedMultiplier;
+    // Draw red body
+    fill(255, 0, 0);
+    ellipse(m.x, m.y, m.size, m.size);
+    // Draw eye (white)
+    fill(255);
+    ellipse(m.x, m.y, m.size * 0.5);
+    // Draw pupil (blue)
+    fill(0, 0, 255);
+    ellipse(m.x, m.y, m.size * 0.25);
+    // Collision with cursor
+    let dx = mouseX - width / 2 - m.x;
+    let dy = mouseY - height / 2 - m.y;
+    if (dist(0, 0, dx, dy) < m.size * 0.5 && !gameOver && collectedCount < 15) {
+      gameOver = true;
+      // record spear spawn position for gameOver block
+      attackedX = m.x;
+      attackedY = m.y;
+    }
+    // Reflect at screen edges
+    if (m.x <= -width / 2 || m.x >= width / 2) {
+      m.vx *= -1;
+      m.x = constrain(m.x, -width / 2, width / 2);
+    }
+    else if (m.y <= -height / 2 || m.y >= height / 2) {
+      m.vy *= -1;
+      m.y = constrain(m.y, -height / 2, height / 2);
     }
   }
 
@@ -128,12 +246,18 @@ function draw() {
       if (d < 37.5) {
         // Hovering: accumulate time
         coin.hoverTime += deltaTime;
-        // If hover exceeds 1 second, game over
+        if (coin.hoverTime > 800 && !intensePhase && !coin.collected) {
+          // Enter intense phase at 0.8s hover
+          intensePhase = true;
+          intenseTimer = 0;
+        }
         if (coin.hoverTime > 1000 && !gameOver && !coin.collected) {
-          gameOver = true;
-          attackProgress = 0;
+          // Trigger spear punishment at 1s hover
+          spearActive = true;
+          spearProgress = 0;
           attackedX = coin.x;
           attackedY = coin.y;
+          gameOver = true;
         }
       } else if (coin.hoverTime > 0) {
         // Left the coin zone before 1 second: collect
@@ -155,6 +279,7 @@ function draw() {
       }
     }
   }
+
 
   if (collectedCount === 15 && !gameOver) {
     fill(0, 200, 0);
