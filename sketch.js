@@ -11,7 +11,7 @@ let attackedX = 0;
 let attackedY = 0;
 
 function preload() {
-  cursorImg = loadImage('yumura.png');
+  cursorImg = loadImage('dorobou.png');
   coinImg = loadImage('coin.png');
 }
 
