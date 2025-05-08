@@ -47,6 +47,13 @@
      python -m http.server 8000
      ```
 
+3. Docker Compose を使う場合  
+   - プロジェクトルートにある `docker-compose.yml` を使ってコンテナを起動します。  
+     ```bash
+     docker-compose up
+     ```
+   - 起動後、ブラウザで `http://localhost:8000` にアクセスしてください。  
+
 ---
 
 ## 実行方法
